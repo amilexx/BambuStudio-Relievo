@@ -1479,6 +1479,10 @@ static inline std::vector<std::vector<ExPolygons>> mmu_segmentation_top_and_bott
         int     bottom_color_penetration_layers     { 0 };
         //BBS: spacing according to width and layer height
         float   extrusion_spacing{ 0.f };
+        // Relievo: when false, the painted region is NOT shrunk layer by layer, so the
+        // paint goes straight down instead of forming a cone. AND over all regions:
+        // one region asking for straight penetration is enough to disable the taper.
+        bool    color_penetration_taper { true };
     };
     PrintConfig print_config = print_object.print()->config();
     float default_line_width = float(print_object.config().line_width.value);
@@ -1496,6 +1500,7 @@ static inline std::vector<std::vector<ExPolygons>> mmu_segmentation_top_and_bott
                 out.extrusion_width     = std::max<float>(out.extrusion_width, outer_wall_line_width);
                 out.top_color_penetration_layers    = std::max<int>(out.top_color_penetration_layers, config.top_color_penetration_layers);
                 out.bottom_color_penetration_layers = std::max<int>(out.bottom_color_penetration_layers, config.bottom_color_penetration_layers);
+                out.color_penetration_taper         = out.color_penetration_taper && config.color_penetration_taper;
                 out.small_region_threshold = config.gap_infill_speed.get_at(print_object.print()->get_process_config_idx(config.wall_filament - 1)) > 0 ?
                                              // Gap fill enabled. Enable a single line of 1/2 extrusion width.
                                              0.5f * outer_wall_line_width :
@@ -1528,10 +1533,14 @@ static inline std::vector<std::vector<ExPolygons>> mmu_segmentation_top_and_bott
                             append(triangles_by_color_top[color_idx][layer_idx + layer_idx_offset], top_ex);
                             float offset = 0.f;
                             ExPolygons layer_slices_trimmed = input_expolygons[layer_idx];
+                            // Relievo: taper step. 0 keeps the painted region at full width all the
+                            // way down (straight prism); opening_ex() below still drops regions too
+                            // thin to print, so the original safety net is preserved.
+                            const float taper_step = stat.color_penetration_taper ? (stat.extrusion_spacing + stat.extrusion_width) : 0.f;
                             for (int last_idx = int(layer_idx) - 1; last_idx > std::max(int(layer_idx - stat.top_color_penetration_layers), int(0)); --last_idx) {
                                 //BBS: offset width should be 2*spacing to avoid too narrow area which has overlap of wall line
                                 //offset -= stat.extrusion_width ;
-                                offset -= (stat.extrusion_spacing + stat.extrusion_width);
+                                offset -= taper_step;
                                 layer_slices_trimmed = intersection_ex(layer_slices_trimmed, input_expolygons[last_idx]);
                                 ExPolygons last = opening_ex(intersection_ex(top_ex, offset_ex(layer_slices_trimmed, offset)), stat.small_region_threshold);
                                 if (last.empty())
@@ -1548,10 +1557,12 @@ static inline std::vector<std::vector<ExPolygons>> mmu_segmentation_top_and_bott
                             append(triangles_by_color_bottom[color_idx][layer_idx + layer_idx_offset], bottom_ex);
                             float offset = 0.f;
                             ExPolygons layer_slices_trimmed = input_expolygons[layer_idx];
+                            // Relievo: see the top branch above.
+                            const float taper_step = stat.color_penetration_taper ? (stat.extrusion_spacing + stat.extrusion_width) : 0.f;
                             for (size_t last_idx = layer_idx + 1; last_idx < std::min(layer_idx + stat.bottom_color_penetration_layers, num_layers); ++last_idx) {
                                 //BBS: offset width should be 2*spacing to avoid too narrow area which has overlap of wall line
                                 //offset -= stat.extrusion_width;
-                                offset -= (stat.extrusion_spacing + stat.extrusion_width);
+                                offset -= taper_step;
                                 layer_slices_trimmed = intersection_ex(layer_slices_trimmed, input_expolygons[last_idx]);
                                 ExPolygons last = opening_ex(intersection_ex(bottom_ex, offset_ex(layer_slices_trimmed, offset)), stat.small_region_threshold);
                                 if (last.empty())

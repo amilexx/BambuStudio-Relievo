@@ -742,7 +742,17 @@ if (SLIC3R_PCH AND NOT SLIC3R_SYNTAXONLY)
     add_precompiled_header(libslic3r_gui pchheader.hpp FORCEINCLUDE)
 endif ()
 
-if (NOT APPLE)
+if (WIN32)
+    # Relievo: MSVC ships no pkg-config, and "if (NOT APPLE)" wrongly pulled Windows
+    # into the pkg_check_modules() path. The deps build already installs FFmpeg's
+    # import libraries and headers, so resolve them directly.
+    find_path(LIBAV_INCLUDE_DIR NAMES libavcodec/avcodec.h REQUIRED)
+    target_include_directories(libslic3r_gui PRIVATE ${LIBAV_INCLUDE_DIR})
+    foreach (_av avcodec swscale avutil)
+        find_library(LIBAV_${_av}_LIB NAMES ${_av} REQUIRED)
+        target_link_libraries(libslic3r_gui ${LIBAV_${_av}_LIB})
+    endforeach ()
+elseif (NOT APPLE)
     pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
         libavcodec
         libswscale

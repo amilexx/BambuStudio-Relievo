@@ -1,5 +1,9 @@
 #include "ElephantFootCompensation.hpp"
+#include "ExPolygon.hpp"     // Relievo : remove_small_and_small_holes
 #include "I18N.hpp"
+
+#include <cmath>             // Relievo : std::sqrt
+#include <cstdlib>           // Relievo : std::getenv / atof
 #include "Layer.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Print.hpp"
@@ -458,6 +462,23 @@ static std::vector<std::vector<ExPolygons>> slices_to_regions(
                         // for example.
                         if (merged && clip_multipart_objects)
                             expolygons = closing_ex(expolygons, float(scale_(EPSILON)));
+                        // Relievo : jeter les ilots residuels issus du diff_ex entre volumes
+                        // quasi-coincidents. Sans ce filtre, chaque residu recoit ses 2-3
+                        // perimetres du PerimeterGenerator -> anneaux concentriques parasites
+                        // dans le volume inferieur. Absents du maillage (verifie : watertight,
+                        // genus 0, 1 composante) et absents quand le modele est mono-volume.
+                        // Seuil en mm2, reglable SANS RECOMPILER :  set RELIEVO_MIN_ISLAND_MM2=0.5
+                        {
+                            static const double s_min_island_mm2 = []() -> double {
+                                if (const char *v = std::getenv("RELIEVO_MIN_ISLAND_MM2"))
+                                    return atof(v);
+                                return 0.2;      // 0,45 x 0,45 mm : sous toute extrusion utile
+                            }();
+                            if (s_min_island_mm2 > 0.0)
+                                remove_small_and_small_holes(
+                                    expolygons,
+                                    Slic3r::sqr(scale_(std::sqrt(s_min_island_mm2))));
+                        }
                         slices_by_region[temp_slices[i].region_id][z_idx] = std::move(expolygons);
                         i = j;
                     }

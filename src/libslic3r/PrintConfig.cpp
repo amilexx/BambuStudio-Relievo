@@ -3697,7 +3697,11 @@ void PrintConfigDef::init_fff_params()
     def->min      = 0;
     def->category = L("Advanced");
     def->mode     = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(0.));
+    // Relievo : defaut 2 mm au lieu de 0 (= desactive en amont). A 0, la couleur
+    // d'une surface peinte envahit toute la matiere qu'elle enferme, jusqu'au
+    // coeur de la piece (mesure : 81 947 mm d'extrusion coloree contre 20 492 de
+    // fond). 2 mm correspond a COLOR_SHELL_MM, l'epaisseur de coque coloree.
+    def->set_default_value(new ConfigOptionFloat(2.));
 
     def           = this->add("mmu_segmented_region_interlocking_depth", coFloat);
     def->label    = L("Interlocking depth of a segmented region");
@@ -5661,6 +5665,16 @@ void PrintConfigDef::init_fff_params()
     def->tooltip  = L("This is the number of layers of bottom paint penetration.");
     def->min      = 1;
     def->set_default_value(new ConfigOptionInt(3));
+
+    def           = this->add("color_penetration_taper", coBool);
+    def->label    = L("Taper paint penetration");
+    def->category = L("Strength");
+    def->tooltip  = L("When enabled (default), each painted layer below the surface is shrunk by one "
+                      "extrusion line, so the paint forms a cone and thin painted features lose their "
+                      "color after one or two layers. Disable to keep the painted region at full width "
+                      "all the way down, which is what you want for engraved/embossed color areas such "
+                      "as roads or rivers on a relief map. Regions too thin to print are still removed.");
+    def->set_default_value(new ConfigOptionBool(true));
 
     def           = this->add("infill_instead_top_bottom_surfaces", coBool);
     def->label    = L("Use infill instead of top and bottom surfaces");

@@ -1,3 +1,38 @@
+# Bambu Studio — version patchée Relievo / Relievo patched build
+
+> **Ce dépôt n'est pas le Bambu Studio officiel.** C'est la version que [Relievo](https://relievo.fr) utilise pour
+> imprimer ses cartes en relief multicolores : Bambu Studio **v02.07.01.62** plus quelques modifications. Elle est
+> publiée sous la même licence (**GNU AGPL v3**), comme celle-ci le demande. Ce n'est **pas affilié à Bambu Lab**.
+> Le logiciel officiel se trouve sur [bambulab/BambuStudio](https://github.com/bambulab/BambuStudio).
+>
+> *This repository is **not** the official Bambu Studio. It is the build [Relievo](https://relievo.fr) uses to print
+> multi-colour relief maps: Bambu Studio **v02.07.01.62** plus a few changes, published under the same **GNU AGPL v3**
+> license, as it requires. **Not affiliated with Bambu Lab.** The official software is at
+> [bambulab/BambuStudio](https://github.com/bambulab/BambuStudio).*
+
+**Télécharger / Download (Windows 64 bits, portable) :**
+[Releases → relievo-02.07.01.62](https://github.com/amilexx/BambuStudio-Relievo/releases/tag/relievo-02.07.01.62)
+
+**Ce qui change / What changes** (détail complet / full details: [RELIEVO.md](RELIEVO.md)) :
+
+| | |
+|---|---|
+| `color_penetration_taper` | Nouvelle option : la couleur peinte descend à pleine largeur au lieu de former un cône, pour que les routes et rivières fines gardent leur couleur. *New option: painted colour goes straight down instead of tapering.* |
+| `mmu_segmented_region_max_width` | Défaut 2 mm et réglage réaffiché. *Default 2 mm, shown again in the UI.* |
+| Îlots résiduels / residual islands | Petits restes entre volumes quasi coïncidents retirés. *Removed between near-coincident volumes.* |
+| Prime Saving | Proposé sur toute machine multi-extrudeur (X2D). *Offered on any multi-extruder machine.* |
+| `bambu-studio-console.exe` | Version ligne de commande pour trancher par script. *Console build for scripted slicing.* |
+
+Toutes les modifications tiennent dans **un seul commit** par-dessus le tag officiel.
+*All changes are in **one commit** on top of the official tag:*
+[`v02.07.01.62...relievo/v02.07.01.62`](https://github.com/amilexx/BambuStudio-Relievo/compare/v02.07.01.62...relievo/v02.07.01.62).
+
+---
+
+*Ci-dessous : le README d'origine de Bambu Studio, inchangé. / Below: the original Bambu Studio README, unchanged.*
+
+---
+
 ![image](https://user-images.githubusercontent.com/106916061/179006347-497d24c0-9bd6-45b7-8c49-d5cc8ecfe5d7.png)
 # BambuStudio
 Bambu Studio is a cutting-edge, feature-rich slicing software.  

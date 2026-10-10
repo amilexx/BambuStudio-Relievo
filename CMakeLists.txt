@@ -215,7 +215,11 @@ if(WIN32)
     if(NOT PKG_CONFIG_EXECUTABLE)
         find_program(PKG_CONFIG_EXECUTABLE NAMES pkg-config)
     endif()
-    find_package(PkgConfig REQUIRED)
+    # Relievo: not REQUIRED on Windows. No pkg-config binary ships with MSVC, and
+    # every pkg_check_modules() call reachable here is either Linux-only (FindGTK3)
+    # or QUIET (FindOpenVDB, LibFindMacros) - so nothing actually needs it. Left
+    # REQUIRED, the build dies at configure time on a purely cosmetic dependency.
+    find_package(PkgConfig QUIET)
     if(NOT DEFINED WIN10SDK_PATH)
         if(DEFINED ENV{WIN10SDK_PATH})
                 set(WIN10SDK_PATH "$ENV{WIN10SDK_PATH}")

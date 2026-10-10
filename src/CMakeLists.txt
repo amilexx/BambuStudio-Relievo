@@ -179,6 +179,18 @@ if (WIN32)
     add_dependencies(BambuStudio_app_gui BambuStudio)
     set_target_properties(BambuStudio_app_gui PROPERTIES OUTPUT_NAME "bambu-studio")
     target_link_libraries(BambuStudio_app_gui PRIVATE boost_headeronly)
+
+    # Relievo: the comment above promises a console variant but only the GUI one is
+    # declared, so there is no way to drive the slicer from a script. Same shim
+    # without WIN32 and without SLIC3R_WRAPPER_NOCONSOLE, which selects the wmain()
+    # entry point the source already provides.
+    add_executable(BambuStudio_app_console BambuStudio_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/BambuStudio.rc)
+    if(MSVC)
+        target_link_options(BambuStudio_app_console PUBLIC "$<$<CONFIG:RELEASE>:/DEBUG>")
+    endif()
+    add_dependencies(BambuStudio_app_console BambuStudio)
+    set_target_properties(BambuStudio_app_console PROPERTIES OUTPUT_NAME "bambu-studio-console")
+    target_link_libraries(BambuStudio_app_console PRIVATE boost_headeronly)
 endif ()
 
 # Link the resources dir to where Slic3r GUI expects it

@@ -3042,6 +3042,7 @@ void TabPrint::build()
         optgroup->append_single_option_line("bottom_shell_layers");
         optgroup->append_single_option_line("bottom_shell_thickness");
         optgroup->append_single_option_line("bottom_color_penetration_layers");
+        optgroup->append_single_option_line("color_penetration_taper");
         optgroup->append_single_option_line("infill_instead_top_bottom_surfaces");
         optgroup->append_single_option_line("internal_solid_infill_pattern");
 
@@ -3257,7 +3258,13 @@ void TabPrint::build()
         optgroup->append_single_option_line("enable_wrapping_detection", "nozzle-clumping-detection-by-probing");
         optgroup->append_single_option_line("enable_order_independent_overlap_carving");
         optgroup->append_single_option_line("interlocking_beam");
-        // optgroup->append_single_option_line("mmu_segmented_region_max_width");
+        // Relievo : reactive. Amont l'avait masque de l'UI, et un reglage absent
+        // de l'UI n'est PAS retenu dans le profil — ni depuis un preset utilisateur,
+        // ni depuis un project_settings.config embarque (verifie : la valeur
+        // ressortait a 0 dans le gcode dans les deux cas). Sans cette ligne, le
+        // parametre est donc inatteignable alors que le moteur le lit toujours
+        // (MultiMaterialSegmentation.cpp:2396).
+        optgroup->append_single_option_line("mmu_segmented_region_max_width");
         optgroup->append_single_option_line("mmu_segmented_region_interlocking_depth");
         optgroup->append_single_option_line("interlocking_beam_width");
         optgroup->append_single_option_line("interlocking_orientation");
@@ -5649,11 +5656,16 @@ void TabPrinter::on_preset_loaded()
             // only trigger prime volume type for printers with multi nozzle
             auto support_fast_purge_opt = current_printer.config.option<ConfigOptionBool>("support_fast_purge_mode");
             bool support_fast_purge     = support_fast_purge_opt ? support_fast_purge_opt->value : false;
-            bool show_purge_mode    = has_multiple_nozzle || support_fast_purge;
+            // RELIEVO PATCH (2026-09-18) : la X2D a 2 extrudeurs mais extruder_max_nozzle_count=[1,1],
+            // donc has_multiple_nozzle=false et Bambu cache le bouton "Purge mode" + ré-écrase Saving->Default.
+            // Or "Prime Saving" est valide sur X2D (prouvé au CLI : prime 45->15, tour 55->44 mm, 12/12
+            // plateaux). On l'autorise sur toute machine multi-extrudeur (extruders_count>1, calculé l.5582).
+            bool allow_prime_saving = has_multiple_nozzle || extruders_count > 1;
+            bool show_purge_mode    = allow_prime_saving || support_fast_purge;
             auto prime_volume_type  = m_preset_bundle->project_config.option<ConfigOptionEnum<PrimeVolumeMode>>("prime_volume_mode");
             if (!show_purge_mode)
                 prime_volume_type->value = PrimeVolumeMode::pvmDefault;
-            else if (!has_multiple_nozzle && prime_volume_type->value == PrimeVolumeMode::pvmSaving)
+            else if (!allow_prime_saving && prime_volume_type->value == PrimeVolumeMode::pvmSaving)
                 prime_volume_type->value = PrimeVolumeMode::pvmDefault;
             else if (!support_fast_purge && prime_volume_type->value == PrimeVolumeMode::pvmFast)
                 prime_volume_type->value = PrimeVolumeMode::pvmDefault;
