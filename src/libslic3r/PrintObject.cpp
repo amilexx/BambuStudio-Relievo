@@ -21,6 +21,9 @@
 #include "AABBTreeLines.hpp"
 
 #include <float.h>
+#include <algorithm>           // Relievo : lower_bound / upper_bound (coeur leger)
+#include <atomic>              // Relievo : compte des couches avec coeur
+#include <cstdlib>             // Relievo : std::getenv / atof
 #include <string_view>
 #include <utility>
 
@@ -758,6 +761,61 @@ void PrintObject::prepare_infill()
     this->set_done(posPrepareInfill);
 }
 
+// Relievo : coeur leger. Pour chaque couche i, la zone a plus de M mm de toute surface de l'objet :
+//   coeur_i = intersection, sur toutes les couches j avec |z_j - z_i| <= M, de lslices_j retreci de M.
+// Le voisinage pris est un CYLINDRE (rayon M, hauteur 2M), qui contient la boule de rayon M : prudent. Il couvre le
+// dessus, le dessous, les flancs et les cavites (connecteurs) sans les connaitre. Une couche dont la fenetre sort de
+// l'objet (moins de M du fond ou du sommet) n'a pas de coeur. Intersections sur la fenetre par table creuse (sparse
+// table) : O(n log n) intersections au lieu de O(n · fenetre).
+// Regle SANS RECOMPILER : RELIEVO_CORE_MARGIN_MM (0 ou absent = desactive, comportement d'origine).
+static void relievo_compute_cores(LayerPtrs &layers)
+{
+    for (Layer *l : layers)
+        l->relievo_core.clear();
+    const char *v = std::getenv("RELIEVO_CORE_MARGIN_MM");
+    const double M = (v && *v) ? std::atof(v) : 0.;
+    if (M <= 0. || layers.empty())
+        return;
+    const size_t n = layers.size();
+    std::vector<std::vector<ExPolygons>> table(1, std::vector<ExPolygons>(n));
+    tbb::parallel_for(size_t(0), n, [&](size_t j) { table[0][j] = shrink_ex(layers[j]->lslices, float(scale_(M))); });
+    for (size_t k = 1; (size_t(1) << k) <= n; ++ k) {
+        const size_t demi = size_t(1) << (k - 1), nb = n - (size_t(1) << k) + 1;
+        std::vector<ExPolygons> rang(nb);
+        const std::vector<ExPolygons> &prec = table.back();
+        tbb::parallel_for(size_t(0), nb, [&](size_t j) {
+            if (! prec[j].empty() && ! prec[j + demi].empty())
+                rang[j] = intersection_ex(prec[j], prec[j + demi]);
+        });
+        table.emplace_back(std::move(rang));
+    }
+    std::vector<double> zs(n);
+    for (size_t j = 0; j < n; ++ j)
+        zs[j] = layers[j]->slice_z;
+    const double z_bas = layers.front()->print_z - layers.front()->height, z_haut = layers.back()->print_z;
+    std::atomic<size_t> avec_coeur(0);
+    tbb::parallel_for(size_t(0), n, [&](size_t i) {
+        const double z = zs[i];
+        if (z - M < z_bas || z + M > z_haut)
+            return;
+        const size_t a = size_t(std::lower_bound(zs.begin(), zs.end(), z - M) - zs.begin());
+        const size_t b = size_t(std::upper_bound(zs.begin(), zs.end(), z + M) - zs.begin()) - 1;
+        if (b < a)
+            return;
+        size_t k = 0;
+        while ((size_t(1) << (k + 1)) <= b - a + 1)
+            ++ k;
+        const ExPolygons &g = table[k][a], &d = table[k][b + 1 - (size_t(1) << k)];
+        if (g.empty() || d.empty())
+            return;
+        layers[i]->relievo_core = intersection_ex(g, d);
+        if (! layers[i]->relievo_core.empty())
+            ++ avec_coeur;
+    });
+    BOOST_LOG_TRIVIAL(warning) << "Relievo coeur leger : marge " << M << " mm, " << avec_coeur.load() << " couches sur " << n
+                               << " avec un coeur";
+}
+
 void PrintObject::infill()
 {
     // prerequisites
@@ -765,6 +823,7 @@ void PrintObject::infill()
 
     if (this->set_started(posInfill)) {
         m_print->set_status(35, L("Generating infill toolpath"));
+        relievo_compute_cores(m_layers);   // Relievo : coeur leger (sans effet si RELIEVO_CORE_MARGIN_MM absent)
 
         const auto& adaptive_fill_octree = this->m_adaptive_fill_octrees.first;
         const auto& support_fill_octree = this->m_adaptive_fill_octrees.second;

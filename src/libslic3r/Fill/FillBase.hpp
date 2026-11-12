@@ -132,6 +132,13 @@ public:
     // BBS: all no overlap expolygons in same layer
     ExPolygons  no_overlap_expolygons;
 
+    // Relievo : coeur leger. Zone de la couche a plus de RELIEVO_CORE_MARGIN_MM de toute surface (Layer::relievo_core).
+    // Dans cette zone, une ligne de grille sur relievo_core_keep seulement (les autres sont coupees a son bord), donc
+    // densite / keep, sans couper les lignes gardees. nullptr = desactive (comportement d'origine).
+    const ExPolygons *relievo_core      = nullptr;
+    int               relievo_core_keep = 0;
+    bool              relievo_core_link = false;   // relier les bouts coupes le long du bord du coeur
+
 public:
     virtual ~Fill() {}
     virtual Fill* clone() const = 0;
@@ -172,6 +179,9 @@ public:
         bounding_box          = f->bounding_box;
         adapt_fill_octree     = f->adapt_fill_octree;
         no_overlap_expolygons = f->no_overlap_expolygons;
+        relievo_core          = f->relievo_core;
+        relievo_core_keep     = f->relievo_core_keep;
+        relievo_core_link     = f->relievo_core_link;
     };
 
 protected:

@@ -19,6 +19,7 @@ n'ont **aucun lien** avec Bambu Lab, qui ne les a ni relues ni approuvées.
 | 4 | `Tab.cpp` | Le mode de purge **« Prime Saving »** est proposé sur toute machine multi-extrudeur (la X2D déclare `extruder_max_nozzle_count=[1,1]` et le bouton restait caché). |
 | 5 | `src/CMakeLists.txt` | Ajout de l'exécutable **`bambu-studio-console.exe`** (même programme, en mode console), pour piloter le tranchage par script. |
 | 6 | `CMakeLists.txt`, `src/slic3r/CMakeLists.txt`, `build_win.bat` | Compilation Windows avec les seuls *Build Tools* de Visual Studio et sans `pkg-config` : `vswhere -products *`, `PkgConfig` facultatif sous Windows, FFmpeg résolu directement. |
+| 7 | `PrintObject.cpp`, `Layer.hpp`, `Fill/Fill.cpp`, `Fill/FillBase.hpp`, `Fill/FillRectilinear.cpp` | **Cœur léger** (novembre 2026), **désactivé par défaut**. Avec la variable d'environnement `RELIEVO_CORE_MARGIN_MM` (en mm), le remplissage clairsemé en grille garde sa densité à moins de cette distance de toute surface (dessus, dessous, flancs, cavités) ; au-delà, une ligne de grille sur `RELIEVO_CORE_KEEP` seulement (3 par défaut). Les lignes gardées traversent le cœur sans être coupées. `RELIEVO_CORE_LINK=1` relie en plus les bouts coupés le long du bord du cœur. |
 
 ## Compiler
 
@@ -58,6 +59,10 @@ which has neither reviewed nor endorsed them.
 4. **"Prime Saving"** purge mode offered on any multi-extruder machine (the X2D reports `extruder_max_nozzle_count=[1,1]`).
 5. New **`bambu-studio-console.exe`** target (same program, console subsystem) to drive slicing from scripts.
 6. Windows build with Visual Studio *Build Tools* only and without `pkg-config`.
+7. **Light core** (November 2026), **off by default**. With the env var `RELIEVO_CORE_MARGIN_MM` (mm), sparse grid infill keeps
+   its density within that distance of any surface (top, bottom, sides, cavities); deeper inside, only one grid line out of
+   `RELIEVO_CORE_KEEP` (default 3) is printed. Kept lines cross the core uncut. `RELIEVO_CORE_LINK=1` also joins the cut ends
+   along the core boundary. GitHub Actions build: `.github/workflows/relievo_win.yml`.
 
 Portable binary (Releases): unzip and run `bambu-studio.exe` / `bambu-studio-console.exe`. `resources` is a full copy; the
 Visual C++ 2015-2022 x64 runtime is bundled (Microsoft redistributable DLLs); Windows 10 also needs the WebView2 runtime.

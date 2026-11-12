@@ -2990,7 +2990,9 @@ bool FillRectilinear::fill_surface_by_lines(const Surface *surface, const FillPa
     return true;
 }
 
-void make_fill_lines(const ExPolygonWithOffset &poly_with_offset, Point refpt, double angle, coord_t x_margin, coord_t line_spacing, coord_t pattern_shift, Polylines &fill_lines)
+// Relievo : line_index (optionnel) recoit, pour chaque ligne emise, son rang dans la grille alignee sur refpt. Ce rang ne
+// depend que de la position de la ligne : il est le meme d'une couche a l'autre et d'une region a l'autre de l'objet.
+void make_fill_lines(const ExPolygonWithOffset &poly_with_offset, Point refpt, double angle, coord_t x_margin, coord_t line_spacing, coord_t pattern_shift, Polylines &fill_lines, std::vector<long long> *line_index = nullptr)
 {
     BoundingBox bounding_box = poly_with_offset.bounding_box_src();
     // Don't produce infill lines, which fully overlap with the infill perimeter.
@@ -3023,10 +3025,50 @@ void make_fill_lines(const ExPolygonWithOffset &poly_with_offset, Point refpt, d
                         fill_lines.emplace_back(Point(vline.pos, it_low->pos()), Point(vline.pos, it_high->pos()));
                     else
                         fill_lines.emplace_back(Point(vline.pos, it_low->pos()).rotated(cos_a, sin_a), Point(vline.pos, it_high->pos()).rotated(cos_a, sin_a));
+                    if (line_index)
+                        line_index->push_back(std::llround(double(vline.pos - refpt.x()) / double(line_spacing)));
                     ++ it;
                 }
             }
         }
+}
+
+// Relievo : parties d'un segment [a, b] HORS du coeur (pair-impair sur les aretes du coeur), dans l'ordre de a vers b.
+// Les morceaux plus courts que min_len sont jetes (un bout de trait isole coute un deplacement pour rien).
+static void relievo_segment_hors_coeur(const Point &a, const Point &b, const ExPolygons &coeur, const Lines &aretes,
+                                       const BoundingBox &bbox_coeur, double min_len, Polylines &out)
+{
+    BoundingBox bb_seg(Points{ a, b });
+    if (! bbox_coeur.overlap(bb_seg)) {
+        out.emplace_back(a, b);
+        return;
+    }
+    const Vec2d A = a.cast<double>(), d = b.cast<double>() - A;
+    std::vector<double> ts;
+    for (const Line &e : aretes) {
+        const Vec2d P = e.a.cast<double>(), r = e.b.cast<double>() - P;
+        const double den = d.x() * r.y() - d.y() * r.x();
+        if (std::abs(den) < 1e-9)
+            continue;
+        const Vec2d AP = P - A;
+        const double t = (AP.x() * r.y() - AP.y() * r.x()) / den;
+        const double u = (AP.x() * d.y() - AP.y() * d.x()) / den;
+        if (t > 0. && t < 1. && u >= 0. && u < 1.)
+            ts.push_back(t);
+    }
+    std::sort(ts.begin(), ts.end());
+    bool dedans = false;
+    for (const ExPolygon &ex : coeur)
+        if (ex.contains(a)) { dedans = true; break; }
+    ts.push_back(1.);
+    double t0 = 0.;
+    const double L = d.norm();
+    for (double t1 : ts) {
+        if (! dedans && (t1 - t0) * L >= min_len)
+            out.emplace_back(Point((A + d * t0).cast<coord_t>()), Point((A + d * t1).cast<coord_t>()));
+        dedans = ! dedans;
+        t0 = t1;
+    }
 }
 
 bool FillRectilinear::fill_surface_by_multilines(const Surface *surface, FillParams params, const std::initializer_list<SweepParams> &sweep_params, Polylines &polylines_out)
@@ -3046,6 +3088,10 @@ bool FillRectilinear::fill_surface_by_multilines(const Surface *surface, FillPar
     coord_t line_width   = coord_t(scale_(this->spacing));
     coord_t line_spacing = coord_t(scale_(this->spacing) * params.multiline / params.density);
     std::pair<float, Point> rotate_vector = this->_infill_direction(surface);
+    // Relievo : coeur leger actif sur cette surface ? (une seule ligne par rang : pas avec le multiligne)
+    const bool coeur_actif = this->relievo_core != nullptr && this->relievo_core_keep > 1 && n_multilines == 1 &&
+                             ! this->relievo_core->empty();
+    std::vector<long long> rangs;
     for (const SweepParams &sweep : sweep_params) {
         // Rotate polygons so that we can work with vertical lines here
         float angle = rotate_vector.first + sweep.angle_base;
@@ -3057,16 +3103,38 @@ bool FillRectilinear::fill_surface_by_multilines(const Surface *surface, FillPar
             coord_t pattern_shift = scale_(sweep.pattern_shift + unscale_(total_offset));
 
             make_fill_lines(ExPolygonWithOffset(poly_with_offset_base, -angle), rotate_vector.second.rotated(-angle), angle,
-                            line_width + coord_t(SCALED_EPSILON), line_spacing, pattern_shift, fill_lines);
+                            line_width + coord_t(SCALED_EPSILON), line_spacing, pattern_shift, fill_lines,
+                            coeur_actif ? &rangs : nullptr);
         }
+    }
+
+    Polygons bord_liaison = poly_with_offset_base.polygons_outer;
+    if (coeur_actif && rangs.size() == fill_lines.size()) {
+        // Relievo : les lignes de rang multiple de keep traversent le coeur ENTIERES ; les autres s'arretent a son bord.
+        // Ordre des lignes conserve (connect_infill relie des lignes voisines).
+        const int    keep     = this->relievo_core_keep;
+        const Lines  aretes   = to_lines(*this->relievo_core);
+        const BoundingBox bbc = get_extents(*this->relievo_core);
+        Polylines    sortie;
+        sortie.reserve(fill_lines.size() * 2);
+        for (size_t i = 0; i < fill_lines.size(); ++ i) {
+            if (((rangs[i] % keep) + keep) % keep == 0)
+                sortie.emplace_back(std::move(fill_lines[i]));
+            else
+                relievo_segment_hors_coeur(fill_lines[i].first_point(), fill_lines[i].last_point(), *this->relievo_core,
+                                           aretes, bbc, 2. * double(line_width), sortie);
+        }
+        fill_lines = std::move(sortie);
+        if (this->relievo_core_link)
+            append(bord_liaison, to_polygons(*this->relievo_core));
     }
 
     if (params.dont_connect() || fill_lines.size() <= 1) {
         if (fill_lines.size() > 1)
             fill_lines = chain_polylines(std::move(fill_lines));
         append(polylines_out, std::move(fill_lines));
-    } else
-        connect_infill(std::move(fill_lines), poly_with_offset_base.polygons_outer, get_extents(surface->expolygon.contour), polylines_out, this->spacing, params);
+    } else if (! fill_lines.empty())
+        connect_infill(std::move(fill_lines), bord_liaison, get_extents(surface->expolygon.contour), polylines_out, this->spacing, params);
 
     return true;
 }

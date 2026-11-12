@@ -163,6 +163,9 @@ public:
     ExPolygons 				 lslices;
     ExPolygons 				 lslices_extrudable;  // BBS: the extrudable part of lslices used for tree support
     std::vector<BoundingBox> lslices_bboxes;
+    // Relievo : zone de la couche a plus de RELIEVO_CORE_MARGIN_MM de toute surface de l'objet (dessus, dessous, flancs,
+    // cavites), calculee par PrintObject::infill() ; vide si desactive. Voir FillRectilinear (coeur leger).
+    ExPolygons              relievo_core;
 
     // BBS
     ExPolygons              loverhangs;

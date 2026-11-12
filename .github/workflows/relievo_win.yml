@@ -1,0 +1,84 @@
+# Relievo : compile le binaire Windows patche (memes etapes que l'atelier : build_win.bat, RelWithDebInfo, MSVC 2022).
+# Deux jobs : les dependances (mises en cache, cle = contenu de deps/), puis l'application. L'artefact contient
+# BambuStudio.dll, bambu-studio.exe et bambu-studio-console.exe, plus le runtime Visual C++ du compilateur utilise :
+# ils remplacent ceux du paquet portable (resources et DLL tierces inchangees).
+name: Relievo Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['relievo/**']
+    paths: ['src/**', 'deps/**', 'build_win.bat', '**/CMakeLists.txt', '.github/workflows/relievo_win.yml']
+
+concurrency:
+  group: relievo-win-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEPS_DIR: C:\bs-deps
+
+jobs:
+  deps:
+    name: Dependances
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: C:\bs-deps
+          key: relievo-deps-win2022-relwithdebinfo-${{ hashFiles('deps/**') }}
+      - name: Compiler les dependances
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: cmd
+        # build_win.bat peut finir sur un code non nul alors que tout est compile (0x400023CC vu a l'atelier) : la
+        # reussite se juge sur ce qui est produit.
+        run: |
+          call build_win.bat -d %DEPS_DIR% -s deps
+          dir %DEPS_DIR%\usr\local
+          if not exist %DEPS_DIR%\usr\local\lib (echo ERREUR : dependances absentes de %DEPS_DIR% & exit /b 1)
+          exit /b 0
+
+  app:
+    name: Application
+    needs: deps
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: C:\bs-deps
+          key: relievo-deps-win2022-relwithdebinfo-${{ hashFiles('deps/**') }}
+          fail-on-cache-miss: true
+      - name: Compiler l'application
+        shell: cmd
+        run: |
+          rem Sans ce fichier, build_win.bat voit un DESTDIR « inattendu », demande confirmation et repond non apres 30 s.
+          mkdir deps\build 2> nul
+          (echo %DEPS_DIR%)> deps\build\.DEPS_PATH.txt
+          call build_win.bat -d %DEPS_DIR% -s app
+          exit /b 0
+      - name: Paquet
+        shell: pwsh
+        run: |
+          $sortie = "relievo-bin"
+          New-Item -ItemType Directory $sortie | Out-Null
+          $rel = "build\src\RelWithDebInfo"
+          foreach ($f in "BambuStudio.dll", "bambu-studio.exe", "bambu-studio-console.exe") {
+            if (-not (Test-Path "$rel\$f")) { throw "$f absent de $rel" }
+            Copy-Item "$rel\$f" $sortie
+          }
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
+          Copy-Item "$($crt.FullName)\*.dll" $sortie
+          git rev-parse HEAD | Out-File "$sortie\COMMIT.txt"
+          Get-ChildItem $sortie | Format-Table Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relievo-bambustudio-win64
+          path: relievo-bin
+          retention-days: 30

@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <memory>
+#include <cstdlib>             // Relievo : std::getenv / atoi (coeur leger)
 
 #include "../ClipperUtils.hpp"
 #include "../Geometry.hpp"
@@ -739,6 +740,14 @@ void Layer::make_fills(FillAdaptive::Octree* adaptive_fill_octree, FillAdaptive:
 
 		if (surface_fill.params.pattern == ipGrid || surface_fill.params.pattern == ipFloatingConcentric)
 			params.can_reverse = false;
+		// Relievo : coeur leger (remplissage clairseme en grille seulement ; voir PrintObject::infill et FillRectilinear).
+		if (surface_fill.params.pattern == ipGrid && using_internal_flow && params.density < 0.99f && ! this->relievo_core.empty()) {
+			static const int  keep = [] { const char *v = std::getenv("RELIEVO_CORE_KEEP"); return (v && *v) ? std::atoi(v) : 3; }();
+			static const bool link = [] { const char *v = std::getenv("RELIEVO_CORE_LINK"); return (v && *v) ? std::atoi(v) != 0 : false; }();
+			f->relievo_core      = &this->relievo_core;
+			f->relievo_core_keep = keep;
+			f->relievo_core_link = link;
+		}
 		LayerRegion* layerm = this->m_regions[surface_fill.region_id];
 		for (ExPolygon& expoly : surface_fill.expolygons) {
 
