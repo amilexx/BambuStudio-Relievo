@@ -198,6 +198,10 @@ public:
     // Number of wipe tower partitions to support the required number of tool switches
     // and to support the wipe tower partitions above this one.
     size_t                      wipe_tower_partitions = 0;
+    // Relievo (RELIEVO_FLUSH_INFILL_NO_TOWER) : without a prime tower, purge volume (mm3) already absorbed by the internal
+    // infill printed with the new filament right after its change on this layer, per new filament id. GCode::set_extruder
+    // subtracts it from the purge the firmware does in the chute (flush_length).
+    std::map<unsigned int, float> relievo_flush_absorbed;
     coordf_t 					wipe_tower_layer_height = 0.;
     // Custom G-code (color change, extruder switch, pause) to be performed before this layer starts to print.
     const CustomGCode::Item    *custom_gcode = nullptr;

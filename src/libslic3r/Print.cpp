@@ -1,3 +1,4 @@
+#include <cstdlib>             // Relievo : std::getenv / atoi (flush into infill without tower)
 #include "Exception.hpp"
 #include "Print.hpp"
 #include "BoundingBox.hpp"
@@ -1904,6 +1905,61 @@ std::map<ObjectID, unsigned int> getObjectExtruderMap(const Print& print) {
 }
 
 // Slicing process, running at a background thread.
+// Relievo (RELIEVO.md item 8) : « Flush into objects' infill » without a prime tower. Upstream marks the wiping
+// extrusions only in _make_wipe_tower(), so with the tower disabled the whole purge goes to the chute (flush_length).
+// Here, when RELIEVO_FLUSH_INFILL_NO_TOWER=1 and an object has flush_into_infill, every filament change of every layer
+// marks internal infill of that layer to be printed with the new filament right after the change (same
+// WipingExtrusions::mark_wiping_extrusions as with the tower, same purge volume as GCode::set_extruder), and remembers the
+// absorbed volume per layer and new filament (LayerTools::relievo_flush_absorbed). GCode::set_extruder then subtracts
+// it from the chute purge, never below RELIEVO_FLUSH_MIN_MM3 (default 45 mm3, nozzle pressure). Off by default.
+static void relievo_flush_into_infill_without_tower(Print &print, ToolOrdering &tool_ordering)
+{
+    static const bool actif = [] { const char *v = std::getenv("RELIEVO_FLUSH_INFILL_NO_TOWER"); return v && *v && std::atoi(v) != 0; }();
+    if (!actif || tool_ordering.empty())
+        return;
+    bool flush_infill = false;
+    for (const PrintObject *object : print.objects())
+        flush_infill = flush_infill || object->config().flush_into_infill.value;
+    if (!flush_infill)
+        return;
+    auto group_result = print.get_layered_nozzle_group_result();
+    if (!group_result)
+        return;
+    const PrintConfig &cfg   = print.config();
+    const size_t nozzle_nums = cfg.nozzle_diameter.values.size();
+    const unsigned int n_fil = (unsigned int) cfg.filament_colour.values.size();
+    std::vector<std::vector<float>> flush;    // per extruder : n_fil x n_fil, row = old filament
+    for (size_t nozzle_id = 0; nozzle_id < nozzle_nums; ++nozzle_id)
+        flush.emplace_back(cast<float>(get_flush_volumes_matrix(cfg.flush_volumes_matrix.values, nozzle_id, nozzle_nums)));
+    MultiNozzleUtils::NozzleStatusRecorder nozzle_recorder;
+    int layer_idx = -1;
+    unsigned int old_filament_id = tool_ordering.first_extruder();
+    if (auto ni = group_result->get_nozzle_for_filament(old_filament_id, layer_idx))
+        nozzle_recorder.set_nozzle_status(ni->group_id, old_filament_id);
+    for (LayerTools &layer_tools : tool_ordering.layer_tools()) {
+        ++layer_idx;
+        for (const unsigned int filament_id : layer_tools.extruders) {
+            if (filament_id == old_filament_id)
+                continue;
+            auto ni = group_result->get_nozzle_for_filament(filament_id, layer_idx);
+            if (!ni) { old_filament_id = filament_id; continue; }
+            const int extruder_id = ni->extruder_id;
+            const int nozzle_id   = ni->group_id;
+            const int prev        = nozzle_recorder.get_filament_in_nozzle(nozzle_id);
+            if (!nozzle_recorder.is_nozzle_empty(nozzle_id) && int(filament_id) != prev && prev >= 0 && unsigned(prev) < n_fil
+                && size_t(extruder_id) < flush.size()) {
+                float volume = flush[extruder_id][size_t(prev) * n_fil + filament_id] * float(cfg.flush_multiplier.get_at(extruder_id));
+                float left   = layer_tools.wiping_extrusions().mark_wiping_extrusions(print, old_filament_id, filament_id, volume);
+                if (volume - left > 0.f)
+                    layer_tools.relievo_flush_absorbed[filament_id] += volume - left;
+            }
+            old_filament_id = filament_id;
+            nozzle_recorder.set_nozzle_status(nozzle_id, filament_id);
+        }
+        layer_tools.wiping_extrusions().ensure_perimeters_infills_order(print);
+    }
+}
+
 void Print::process(std::unordered_map<std::string, long long>* slice_time, bool use_cache)
 {
     long long start_time = 0, end_time = 0;
@@ -2200,6 +2256,8 @@ void Print::process(std::unordered_map<std::string, long long>* slice_time, bool
             m_tool_ordering.sort_and_build_data(*this, -1, false);
             if (m_tool_ordering.empty() || m_tool_ordering.last_extruder() == unsigned(-1))
                 throw Slic3r::SlicingError("The print is empty. The model is not printable with current print settings.");
+            // Relievo : flush into objects' infill WITHOUT a prime tower (upstream only does it while planning the tower).
+            relievo_flush_into_infill_without_tower(*this, m_tool_ordering);
         }
         this->set_done(psWipeTower);
     }

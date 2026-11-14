@@ -4132,6 +4132,7 @@ GCode::LayerResult GCode::process_layer(
     const bool                               prime_extruder)
 {
     assert(! layers.empty());
+    m_relievo_layer_tools = &layer_tools;   // Relievo : purge absorbed by the infill (set_extruder)
     // Either printing all copies of all objects, or just a single copy of a single object.
     assert(single_object_instance_idx == size_t(-1) || layers.size() == 1);
 
@@ -7717,6 +7718,15 @@ std::string GCode::set_extruder(unsigned int new_filament_id, double print_z, bo
         else {
             wipe_volume = flush_matrix[old_filament_id * number_of_extruders + new_filament_id];
             wipe_volume *= m_config.flush_multiplier.get_at(new_extruder_id);  // if is multi_extruder only use the fist extruder matrix
+        }
+        // Relievo : part of this purge was already printed into this layer's internal infill (no prime tower). Keep at least
+        // RELIEVO_FLUSH_MIN_MM3 (default 45) in the chute to bring the nozzle back to pressure.
+        if (m_relievo_layer_tools != nullptr && !m_relievo_layer_tools->relievo_flush_absorbed.empty()) {
+            auto it = m_relievo_layer_tools->relievo_flush_absorbed.find(new_filament_id);
+            if (it != m_relievo_layer_tools->relievo_flush_absorbed.end() && it->second > 0.f) {
+                static const float mini = [] { const char *v = std::getenv("RELIEVO_FLUSH_MIN_MM3"); return (v && *v) ? float(std::atof(v)) : 45.f; }();
+                wipe_volume = std::max(wipe_volume - it->second, std::min(wipe_volume, mini));
+            }
         }
         wipe_volume = std::max(0.f, wipe_volume-grab_purge_volume);
 

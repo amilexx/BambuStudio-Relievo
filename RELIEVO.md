@@ -63,6 +63,11 @@ which has neither reviewed nor endorsed them.
    its density within that distance of any surface (top, bottom, sides, cavities); deeper inside, only one grid line out of
    `RELIEVO_CORE_KEEP` (default 3) is printed. Kept lines cross the core uncut. `RELIEVO_CORE_LINK=1` also joins the cut ends
    along the core boundary. GitHub Actions build: `.github/workflows/relievo_win.yml`.
+8. **Flush into infill without a prime tower** (November 2026), **off by default**. Upstream honours *Flush into objects'
+   infill* only while planning the prime tower; with the tower disabled the whole purge goes to the chute. With the env var
+   `RELIEVO_FLUSH_INFILL_NO_TOWER=1` and `flush_into_infill` on the object, each filament change marks internal infill of the
+   layer to be printed with the new filament right after the change, and the chute purge (`flush_length`) is reduced by the
+   absorbed volume, never below `RELIEVO_FLUSH_MIN_MM3` (default 45 mm3, nozzle pressure).
 
 Portable binary (Releases): unzip and run `bambu-studio.exe` / `bambu-studio-console.exe`. `resources` is a full copy; the
 Visual C++ 2015-2022 x64 runtime is bundled (Microsoft redistributable DLLs); Windows 10 also needs the WebView2 runtime.

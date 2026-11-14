@@ -495,6 +495,8 @@ private:
     LiftType to_lift_type(ZHopType z_hop_types);
 
     std::string     set_extruder(unsigned int extruder_id, double print_z, bool by_object=false);
+    // Relievo : layer being exported (process_layer), for the purge already absorbed by the infill without a prime tower.
+    const LayerTools *m_relievo_layer_tools = nullptr;
     std::set<ObjectID>              m_objsWithBrim; // indicates the objs with brim
     std::set<ObjectID>              m_objSupportsWithBrim; // indicates the objs' supports with brim
     // Cache for custom seam enforcers/blockers for each layer.
