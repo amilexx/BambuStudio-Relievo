@@ -10,6 +10,8 @@
 #include "format.hpp"
 
 #include <utility>
+#include <cstdlib>             // Relievo (diagnostic): std::getenv
+#include <tuple>
 #include <unordered_set>
 
 #include <boost/log/trivial.hpp>
@@ -700,7 +702,22 @@ static std::vector<std::vector<PaintedLine>> post_process_painted_lines(const st
                    ((first.projected_line.a - first_start_p).cast<double>().squaredNorm() == (second.projected_line.a - first_start_p).cast<double>().squaredNorm() &&
                     (first.projected_line.b - first.projected_line.a).cast<double>().squaredNorm() < (second.projected_line.b - second.projected_line.a).cast<double>().squaredNorm())))));
     };
-    std::sort(painted_lines.begin(), painted_lines.end(), comp);
+    // Relievo (diagnostic): painted lines come from a parallel projection, so their order varies between runs, and
+    // `comp` leaves ties (same contour line, same start, same length, different colour) unordered. The same object
+    // can then be segmented differently from one run to the next. RELIEVO_MM_DETERMINISTIC=1 breaks every tie
+    // (colour, then endpoints), so a given input always yields the same segmentation. Off by default.
+    static const bool relievo_total_order = [] { const char *v = std::getenv("RELIEVO_MM_DETERMINISTIC"); return v && *v && std::atoi(v) != 0; }();
+    if (relievo_total_order) {
+        auto key = [](const PaintedLine &l) {
+            return std::make_tuple(l.color, l.projected_line.a.x(), l.projected_line.a.y(), l.projected_line.b.x(), l.projected_line.b.y());
+        };
+        std::sort(painted_lines.begin(), painted_lines.end(), [&comp, &key](const PaintedLine &first, const PaintedLine &second) {
+            if (comp(first, second)) return true;
+            if (comp(second, first)) return false;
+            return key(first) < key(second);
+        });
+    } else
+        std::sort(painted_lines.begin(), painted_lines.end(), comp);
 
     std::vector<std::vector<PaintedLine>> filtered_painted_lines(contours.size());
     size_t prev_painted_line_idx = 0;
@@ -2343,6 +2360,7 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
                 export_painted_lines_to_svg(debug_out_path("0-mm-painted-lines-%d-%d.svg", layer_idx, iRun), {painted_lines[layer_idx]}, input_for_edge_grid[layer_idx]);
 #endif // MM_SEGMENTATION_DEBUG_PAINTED_LINES
 
+                BOOST_LOG_TRIVIAL(debug) << "MM segmentation - layer " << layer_idx << " - begin"; // Relievo (diagnostic)
                 std::vector<std::vector<PaintedLine>> post_processed_painted_lines = post_process_painted_lines(edge_grids[layer_idx].contours(), std::move(painted_lines[layer_idx]));
 
 #ifdef MM_SEGMENTATION_DEBUG_PAINTED_LINES
@@ -2361,9 +2379,13 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
                     // If the whole layer is painted using the same color, it is not needed to construct a Voronoi diagram for the segmentation of this layer.
                     segmented_regions[layer_idx][size_t(color_poly.front().front().color)] = input_for_edge_grid[layer_idx];
                 } else {
+                    BOOST_LOG_TRIVIAL(debug) << "MM segmentation - layer " << layer_idx << " - build_graph"; // Relievo (diagnostic): which step of which layer never ends
                     MMU_Graph graph = build_graph(layer_idx, color_poly, throw_on_cancel_callback);
+                    BOOST_LOG_TRIVIAL(debug) << "MM segmentation - layer " << layer_idx << " - remove_multiple_edges_in_vertices";
                     remove_multiple_edges_in_vertices(graph, color_poly);
+                    BOOST_LOG_TRIVIAL(debug) << "MM segmentation - layer " << layer_idx << " - remove_nodes_with_one_arc";
                     graph.remove_nodes_with_one_arc();
+                    BOOST_LOG_TRIVIAL(debug) << "MM segmentation - layer " << layer_idx << " - extract_colored_segments";
                     segmented_regions[layer_idx] = extract_colored_segments(graph, num_extruders);
                     //segmented_regions[layer_idx] = extract_colored_segments(color_poly, num_extruders, layer_idx);
                 }
@@ -2371,6 +2393,7 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
 #ifdef MM_SEGMENTATION_DEBUG_REGIONS
                 export_regions_to_svg(debug_out_path("3-mm-regions-sides-%d-%d.svg", layer_idx, iRun), segmented_regions[layer_idx], input_for_edge_grid[layer_idx]);
 #endif // MM_SEGMENTATION_DEBUG_REGIONS
+                BOOST_LOG_TRIVIAL(debug) << "MM segmentation - layer " << layer_idx << " - end"; // Relievo (diagnostic)
             }
         }
     }); // end of parallel_for

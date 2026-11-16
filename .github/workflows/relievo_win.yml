@@ -84,9 +84,19 @@ jobs:
           $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
           Copy-Item "$($crt.FullName)\*.dll" $sortie
           git rev-parse HEAD | Out-File "$sortie\COMMIT.txt"
+          # Symboles de debogage a part : sans eux, la pile d'une console calee n'est qu'une suite d'adresses.
+          New-Item -ItemType Directory relievo-pdb | Out-Null
+          Get-ChildItem $rel -Filter *.pdb | Copy-Item -Destination relievo-pdb
+          git rev-parse HEAD | Out-File "relievo-pdb\COMMIT.txt"
+          Get-ChildItem relievo-pdb | Format-Table Name, Length
           Get-ChildItem $sortie | Format-Table Name, Length
       - uses: actions/upload-artifact@v4
         with:
           name: relievo-bambustudio-win64
           path: relievo-bin
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relievo-bambustudio-win64-pdb
+          path: relievo-pdb
           retention-days: 30
