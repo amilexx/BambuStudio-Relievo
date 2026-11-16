@@ -1,0 +1,40 @@
+# Relievo : met a disposition les dependances deja compilees (cache de relievo_win.yml) sous forme d'artefact, pour
+# compiler l'application sur un poste local sans repasser ~1 h sur les dependances. A decompresser dans C:\bs-deps
+# (meme chemin que sur le runner : les fichiers CMake des dependances le contiennent en dur).
+# Se lance a chaque push qui touche ce fichier, sur une branche relievo/** dont le cache existe deja.
+name: Relievo export des dependances
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['relievo/**']
+    paths: ['.github/workflows/relievo_deps_export.yml']
+
+env:
+  DEPS_DIR: C:\bs-deps
+
+jobs:
+  export:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - id: cle
+        shell: bash
+        run: echo "deps=$(git rev-parse HEAD:deps)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: C:\bs-deps
+          key: relievo-deps-win2022-relwithdebinfo-${{ steps.cle.outputs.deps }}
+          fail-on-cache-miss: true
+      - name: Archive
+        shell: pwsh
+        run: |
+          tar -C C:\ -cf deps.tar bs-deps
+          Get-Item deps.tar | Format-Table Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relievo-deps-win64
+          path: deps.tar
+          compression-level: 6
+          retention-days: 3
