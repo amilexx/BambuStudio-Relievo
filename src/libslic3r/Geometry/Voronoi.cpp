@@ -7,6 +7,10 @@
 
 #include <boost/log/trivial.hpp>
 
+#include "libslic3r/Geometry.hpp"   // Relievo: segments_intersect
+#include <algorithm>
+#include <unordered_map>
+
 namespace Slic3r::Geometry {
 
 using PolygonsSegmentIndexConstIt = std::vector<Arachne::PolygonsSegmentIndex>::const_iterator;
@@ -296,6 +300,56 @@ VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram_by_rotation(const Segm
         PointType from = boost::polygon::segment_traits<SegmentType>::get(*segment_it, boost::polygon::LOW);
         PointType to   = boost::polygon::segment_traits<SegmentType>::get(*segment_it, boost::polygon::HIGH);
         segments_rotated.emplace_back(from.rotated(fix_angle), to.rotated(fix_angle));
+    }
+
+    // Relievo: rounding the rotated endpoints to integers can make two input segments cross, or collapse a segment to a
+    // point. boost::polygon::construct_voronoi requires non-intersecting segments and may then never return (seen on a
+    // painted MM layer: console stuck forever, one core busy in voronoi_diagram::_build). Skip this angle instead.
+    auto relievo_rotated_input_invalid = [](const std::vector<VoronoiDiagram::Segment> &segs) -> bool {
+        if (segs.size() < 2)
+            return false;
+        double total_len = 0.;
+        for (const VoronoiDiagram::Segment &s : segs) {
+            if (s.from == s.to)
+                return true;
+            total_len += (s.to - s.from).cast<double>().norm();
+        }
+        const int64_t cell = std::max<int64_t>(1, int64_t(2. * total_len / double(segs.size())));
+        std::unordered_map<int64_t, std::vector<uint32_t>> grid;
+        for (uint32_t i = 0; i < uint32_t(segs.size()); ++i) {
+            const VoronoiDiagram::Segment &s = segs[i];
+            const int64_t x0 = std::min<int64_t>(s.from.x(), s.to.x()) / cell, x1 = std::max<int64_t>(s.from.x(), s.to.x()) / cell;
+            const int64_t y0 = std::min<int64_t>(s.from.y(), s.to.y()) / cell, y1 = std::max<int64_t>(s.from.y(), s.to.y()) / cell;
+            if ((x1 - x0 + 1) * (y1 - y0 + 1) > 4096)
+                continue; // a very long segment: not worth a full scan, the check stays best effort
+            for (int64_t cx = x0; cx <= x1; ++cx)
+                for (int64_t cy = y0; cy <= y1; ++cy)
+                    grid[(cx << 32) ^ (cy & 0xffffffffLL)].push_back(i);
+        }
+        for (const auto &kv : grid) {
+            const std::vector<uint32_t> &ids = kv.second;
+            for (size_t a = 0; a < ids.size(); ++a)
+                for (size_t b = a + 1; b < ids.size(); ++b) {
+                    const VoronoiDiagram::Segment &p = segs[ids[a]], &q = segs[ids[b]];
+                    const Point *shared = (p.from == q.from || p.from == q.to) ? &p.from : ((p.to == q.from || p.to == q.to) ? &p.to : nullptr);
+                    if (shared) {
+                        // Neighbours in a contour share an endpoint: only a fold-back (collinear overlap) is invalid.
+                        const Point &po = (shared == &p.from) ? p.to : p.from;
+                        const Point &qo = (*shared == q.from) ? q.to : q.from;
+                        const Vec2i64 u = (po - *shared).cast<int64_t>(), v = (qo - *shared).cast<int64_t>();
+                        if (cross2(u, v) == 0 && u.dot(v) > 0)
+                            return true;
+                    } else if (Geometry::segments_intersect(p.from, p.to, q.from, q.to)) {
+                        return true;
+                    }
+                }
+        }
+        return false;
+    };
+    if (relievo_rotated_input_invalid(segments_rotated)) {
+        BOOST_LOG_TRIVIAL(warning) << "Relievo: rotation by " << fix_angle
+                                   << " rad skipped, the rotated input has crossing or collapsed segments.";
+        return m_issue_type == IssueType::NO_ISSUE_DETECTED ? IssueType::UNKNOWN : m_issue_type;
     }
 
     throw_on_cancel();
