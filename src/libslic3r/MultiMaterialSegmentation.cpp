@@ -13,6 +13,8 @@
 #include <cstdlib>             // Relievo (diagnostic): std::getenv
 #include <tuple>
 #include <unordered_set>
+#include <unordered_map>       // Relievo (diagnostic): relievo_describe_invalid_input
+#include <string>
 
 #include <boost/log/trivial.hpp>
 #include <tbb/parallel_for.h>
@@ -1740,6 +1742,58 @@ static inline Line clip_finite_voronoi_edge(const Voronoi::VD::edge_type &edge, 
 
 static inline bool has_same_color(const ColoredLine &cl1, const ColoredLine &cl2) { return cl1.color == cl2.color; }
 
+// Relievo (diagnostic): why a Voronoi input would be invalid for boost::polygon::construct_voronoi, which requires
+// segments that only meet at shared endpoints: a zero-length segment, two neighbours folding back onto each other, or
+// two segments crossing / touching away from a shared endpoint. Empty string when nothing is found (grid-bucketed,
+// best effort for very long segments). Used to locate the remaining console stalls (first construct_voronoi of a layer
+// never returns, before any rotation repair).
+static std::string relievo_describe_invalid_input(const ColoredLines &lines)
+{
+    if (lines.size() < 2)
+        return {};
+    auto pt = [](const Point &p) { return "(" + std::to_string(p.x()) + "," + std::to_string(p.y()) + ")"; };
+    auto seg = [&lines, &pt](size_t i) {
+        return "#" + std::to_string(i) + " poly " + std::to_string(lines[i].poly_idx) + " " + pt(lines[i].line.a) + "-" + pt(lines[i].line.b) +
+               " color " + std::to_string(lines[i].color);
+    };
+    double total_len = 0.;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (lines[i].line.a == lines[i].line.b)
+            return "zero-length " + seg(i);
+        total_len += lines[i].line.length();
+    }
+    const int64_t cell = std::max<int64_t>(1, int64_t(2. * total_len / double(lines.size())));
+    std::unordered_map<int64_t, std::vector<uint32_t>> grid;
+    for (uint32_t i = 0; i < uint32_t(lines.size()); ++i) {
+        const Line &l = lines[i].line;
+        const int64_t x0 = std::min<int64_t>(l.a.x(), l.b.x()) / cell, x1 = std::max<int64_t>(l.a.x(), l.b.x()) / cell;
+        const int64_t y0 = std::min<int64_t>(l.a.y(), l.b.y()) / cell, y1 = std::max<int64_t>(l.a.y(), l.b.y()) / cell;
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) > 4096)
+            continue;
+        for (int64_t cx = x0; cx <= x1; ++cx)
+            for (int64_t cy = y0; cy <= y1; ++cy)
+                grid[(cx << 32) ^ (cy & 0xffffffffLL)].push_back(i);
+    }
+    for (const auto &kv : grid) {
+        const std::vector<uint32_t> &ids = kv.second;
+        for (size_t a = 0; a < ids.size(); ++a)
+            for (size_t b = a + 1; b < ids.size(); ++b) {
+                const Line &p = lines[ids[a]].line, &q = lines[ids[b]].line;
+                const Point *shared = (p.a == q.a || p.a == q.b) ? &p.a : ((p.b == q.a || p.b == q.b) ? &p.b : nullptr);
+                if (shared) {
+                    const Point  &po = (shared == &p.a) ? p.b : p.a;
+                    const Point  &qo = (*shared == q.a) ? q.b : q.a;
+                    const Vec2i64 u = (po - *shared).cast<int64_t>(), v = (qo - *shared).cast<int64_t>();
+                    if (cross2(u, v) == 0 && u.dot(v) > 0)
+                        return "fold-back " + seg(ids[a]) + " / " + seg(ids[b]);
+                } else if (Geometry::segments_intersect(p.a, p.b, q.a, q.b)) {
+                    return "crossing " + seg(ids[a]) + " / " + seg(ids[b]);
+                }
+            }
+    }
+    return {};
+}
+
 static MMU_Graph build_graph(size_t layer_idx, const std::vector<std::vector<ColoredLine>> &color_poly,
                              const std::function<void()> &throw_on_cancel = [](){})
 {
@@ -1769,6 +1823,8 @@ static MMU_Graph build_graph(size_t layer_idx, const std::vector<std::vector<Col
     const ColoredLines colored_lines = lines_colored;
 
     Voronoi::VD vd;
+    if (const std::string why = relievo_describe_invalid_input(colored_lines); !why.empty())
+        BOOST_LOG_TRIVIAL(warning) << "Relievo: layer " << layer_idx << " - initial Voronoi input invalid: " << why;
     vd.construct_voronoi(colored_lines.begin(), colored_lines.end(), true, throw_on_cancel);
     MMU_Graph graph;
     graph.nodes.reserve(points.size() + vd.vertices().size());
