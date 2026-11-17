@@ -20,6 +20,8 @@ n'ont **aucun lien** avec Bambu Lab, qui ne les a ni relues ni approuvées.
 | 5 | `src/CMakeLists.txt` | Ajout de l'exécutable **`bambu-studio-console.exe`** (même programme, en mode console), pour piloter le tranchage par script. |
 | 6 | `CMakeLists.txt`, `src/slic3r/CMakeLists.txt`, `build_win.bat` | Compilation Windows avec les seuls *Build Tools* de Visual Studio et sans `pkg-config` : `vswhere -products *`, `PkgConfig` facultatif sous Windows, FFmpeg résolu directement. |
 | 7 | `PrintObject.cpp`, `Layer.hpp`, `Fill/Fill.cpp`, `Fill/FillBase.hpp`, `Fill/FillRectilinear.cpp` | **Cœur léger** (novembre 2026), **désactivé par défaut**. Avec la variable d'environnement `RELIEVO_CORE_MARGIN_MM` (en mm), le remplissage clairsemé en grille garde sa densité à moins de cette distance de toute surface (dessus, dessous, flancs, cavités) ; au-delà, une ligne de grille sur `RELIEVO_CORE_KEEP` seulement (3 par défaut). Les lignes gardées traversent le cœur sans être coupées. `RELIEVO_CORE_LINK=1` relie en plus les bouts coupés le long du bord du cœur. |
+| 8 | `Print.cpp`, `GCode.cpp/.hpp`, `GCode/ToolOrdering.hpp` | **Purge dans le remplissage sans tour de purge** (novembre 2026), **désactivée par défaut**. Avec `RELIEVO_FLUSH_INFILL_NO_TOWER=1` et *Flush into objects' infill* sur l'objet, une partie de la purge part dans le remplissage interne de la couche ; la purge à la goulotte ne descend jamais sous `RELIEVO_FLUSH_MIN_MM3` (45 mm³ par défaut). |
+| 9 | `Geometry/Voronoi.cpp` | **Tranchage qui ne finit jamais** (novembre 2026). La réparation d'un diagramme de Voronoi dégénéré tourne les segments puis arrondit leurs extrémités : deux segments peuvent alors se croiser, et `boost::polygon::construct_voronoi` ne revient plus (vu sur les couches à zones peintes : console bloquée sur un cœur). L'entrée tournée est maintenant vérifiée ; un angle qui la rend invalide est sauté et l'angle suivant essayé. Sur un plateau qui calait 6 fois sur 6 : 16 tranchages sur 18 finissent, résultats identiques. |
 
 ## Compiler
 
@@ -68,6 +70,10 @@ which has neither reviewed nor endorsed them.
    `RELIEVO_FLUSH_INFILL_NO_TOWER=1` and `flush_into_infill` on the object, each filament change marks internal infill of the
    layer to be printed with the new filament right after the change, and the chute purge (`flush_length`) is reduced by the
    absorbed volume, never below `RELIEVO_FLUSH_MIN_MM3` (default 45 mm3, nozzle pressure).
+9. **Slicing that never ends** (November 2026). Repairing a degenerate Voronoi diagram rotates the input segments and rounds
+   their endpoints, which can make two segments cross; `boost::polygon::construct_voronoi` then never returns (seen on painted
+   multi-material layers: console stuck on one core). The rotated input is now checked and an angle that makes it invalid is
+   skipped. On a plate that stalled 6 times out of 6, 16 runs out of 18 finish, with identical results.
 
 Portable binary (Releases): unzip and run `bambu-studio.exe` / `bambu-studio-console.exe`. `resources` is a full copy; the
 Visual C++ 2015-2022 x64 runtime is bundled (Microsoft redistributable DLLs); Windows 10 also needs the WebView2 runtime.
