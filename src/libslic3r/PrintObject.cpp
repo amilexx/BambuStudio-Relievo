@@ -7,6 +7,7 @@
 #include "I18N.hpp"
 #include "Layer.hpp"
 #include "MutablePolygon.hpp"
+#include "SLA/IndexedMesh.hpp"
 #include "Support/SupportMaterial.hpp"
 #include "Support/TreeSupport.hpp"
 #include "Surface.hpp"
@@ -24,6 +25,10 @@
 #include <algorithm>           // Relievo : lower_bound / upper_bound (coeur leger)
 #include <atomic>              // Relievo : compte des couches avec coeur
 #include <cstdlib>             // Relievo : std::getenv / atof
+#include <iterator>
+#include <mutex>
+#include <ostream>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -867,6 +872,53 @@ void PrintObject::ironing()
     }
 }
 
+void PrintObject::contour_z() 
+{
+    if (!this->set_started(posContouring)) {
+        return;
+    }
+
+    m_print->set_status(40, L("Z contouring"));
+    BOOST_LOG_TRIVIAL(debug) << "Contouring in parallel - start";
+
+    TriangleMesh mesh = this->m_model_object->raw_mesh();
+    // Relievo : repris d'OrcaSlicer (#16461, 1cc82873, 12232deb). Un PrintObject regroupe les instances qui ne
+    // diffèrent que par leur décalage XY ; la première vaut pour toutes. Le maillage est mis dans le repère du
+    // PrintObject (centré par center_offset), le sol décalé du bas de l'objet.
+    const ModelInstance *inst = m_instances.front().model_instance;
+    Point                    center_offset = this->center_offset();
+    Geometry::Transformation trans = inst->get_transformation();
+
+    double z = this->m_model_object->get_min_z(); // Relievo : min_z() d'OrcaSlicer = get_min_z() ici
+    trans.set_offset(Vec3d(-unscale<double>(center_offset.x()), -unscale<double>(center_offset.y()), 0));
+    mesh.transform(trans.get_matrix());
+
+    sla::IndexedMesh imesh(mesh);
+    imesh.ground_level_offset(-z);
+
+    std::mutex mtx;
+    size_t completed = 0;
+    tbb::parallel_for(
+        // Contouring starting with layer second layer to avoid build plate collision
+        tbb::blocked_range<size_t>(1, m_layers.size()),
+        [&, this](const tbb::blocked_range<size_t>& range) {
+            for (size_t layer_idx = range.begin(); layer_idx < range.end(); layer_idx++) {
+                m_print->throw_if_canceled();
+                m_layers[layer_idx]->make_contour_z(imesh);
+
+                std::scoped_lock lock(mtx);
+                completed++;
+                std::string msg = (boost::format("Z contoured layer %d/%d (%d%%)") % (completed) % m_layers.size() % int(double(completed) / m_layers.size() * 100)).str();
+                m_print->set_status(40, msg);
+            }
+        }
+    );
+    m_print->throw_if_canceled();
+    BOOST_LOG_TRIVIAL(debug) << "Contouring in parallel - end";
+
+    this->set_done(posContouring);
+}
+
 // BBS
 void PrintObject::clear_overhangs_for_lift()
 {
@@ -1510,16 +1562,16 @@ bool PrintObject::invalidate_step(PrintObjectStep step)
 
     // propagate to dependent steps
     if (step == posPerimeters) {
-		invalidated |= this->invalidate_steps({ posPrepareInfill, posInfill, posIroning, posSimplifyWall, posSimplifyInfill });
+		invalidated |= this->invalidate_steps({ posPrepareInfill, posInfill, posIroning, posContouring, posSimplifyWall, posSimplifyInfill });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
     } else if (step == posPrepareInfill) {
-        invalidated |= this->invalidate_steps({ posInfill, posIroning, posSimplifyWall, posSimplifyInfill });
+        invalidated |= this->invalidate_steps({ posInfill, posIroning, posContouring, posSimplifyWall, posSimplifyInfill });
         invalidated |= m_print->invalidate_steps({psSkirtBrim});
     } else if (step == posInfill) {
-        invalidated |= this->invalidate_steps({ posIroning, posSimplifyInfill });
+        invalidated |= this->invalidate_steps({ posIroning, posContouring, posSimplifyInfill });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
     } else if (step == posSlice) {
-		invalidated |= this->invalidate_steps({ posPerimeters, posPrepareInfill, posInfill, posIroning, posSupportMaterial, posSimplifyWall, posSimplifyInfill });
+		invalidated |= this->invalidate_steps({ posPerimeters, posPrepareInfill, posInfill, posIroning, posContouring, posSupportMaterial, posSimplifyWall, posSimplifyInfill });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
         m_slicing_params.valid = false;
     } else if (step == posSupportMaterial) {

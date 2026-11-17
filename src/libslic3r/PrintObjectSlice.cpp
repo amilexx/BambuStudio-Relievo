@@ -1,5 +1,6 @@
 #include "ElephantFootCompensation.hpp"
 #include "ExPolygon.hpp"     // Relievo : remove_small_and_small_holes
+#include "Exception.hpp"
 #include "I18N.hpp"
 
 #include <cmath>             // Relievo : std::sqrt
@@ -38,6 +39,15 @@ LayerPtrs new_layers(
         coordf_t lo = object_layers[i_layer];
         coordf_t hi = object_layers[i_layer + 1];
         coordf_t slice_z = 0.5 * (lo + hi);
+        // Relievo : comme OrcaSlicer (#13766, #13452) : la première couche est tranchée au milieu, et la borne
+        // tolère l'arrondi (zaa_min_z = hauteur de couche).
+        if (print_object->config().zaa_enabled && i_layer != 0) {
+            coordf_t z_offset = print_object->config().zaa_min_z;
+            slice_z = lo + z_offset;
+            if ((slice_z < lo && !is_approx(slice_z, lo)) || (slice_z > hi && !is_approx(slice_z, hi))) {
+                throw RuntimeError("Bad min Z value");
+            }
+        }
         Layer *layer = new Layer(id ++, print_object, hi - lo, hi + zmin, slice_z);
         out.emplace_back(layer);
         if (prev != nullptr) {

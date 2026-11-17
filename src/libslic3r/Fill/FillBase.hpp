@@ -131,6 +131,7 @@ public:
 
     // BBS: all no overlap expolygons in same layer
     ExPolygons  no_overlap_expolygons;
+    bool dont_alternate_fill_direction = false;
 
     // Relievo : coeur leger. Zone de la couche a plus de RELIEVO_CORE_MARGIN_MM de toute surface (Layer::relievo_core).
     // Dans cette zone, une ligne de grille sur relievo_core_keep seulement (les autres sont coupees a son bord), donc
