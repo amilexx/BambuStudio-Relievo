@@ -22,6 +22,7 @@ n'ont **aucun lien** avec Bambu Lab, qui ne les a ni relues ni approuvées.
 | 7 | `PrintObject.cpp`, `Layer.hpp`, `Fill/Fill.cpp`, `Fill/FillBase.hpp`, `Fill/FillRectilinear.cpp` | **Cœur léger** (novembre 2026), **désactivé par défaut**. Avec la variable d'environnement `RELIEVO_CORE_MARGIN_MM` (en mm), le remplissage clairsemé en grille garde sa densité à moins de cette distance de toute surface (dessus, dessous, flancs, cavités) ; au-delà, une ligne de grille sur `RELIEVO_CORE_KEEP` seulement (3 par défaut). Les lignes gardées traversent le cœur sans être coupées. `RELIEVO_CORE_LINK=1` relie en plus les bouts coupés le long du bord du cœur. |
 | 8 | `Print.cpp`, `GCode.cpp/.hpp`, `GCode/ToolOrdering.hpp` | **Purge dans le remplissage sans tour de purge** (novembre 2026), **désactivée par défaut**. Avec `RELIEVO_FLUSH_INFILL_NO_TOWER=1` et *Flush into objects' infill* sur l'objet, une partie de la purge part dans le remplissage interne de la couche ; la purge à la goulotte ne descend jamais sous `RELIEVO_FLUSH_MIN_MM3` (45 mm³ par défaut). |
 | 9 | `Geometry/Voronoi.cpp` | **Tranchage qui ne finit jamais** (novembre 2026). La réparation d'un diagramme de Voronoi dégénéré tourne les segments puis arrondit leurs extrémités : deux segments peuvent alors se croiser, et `boost::polygon::construct_voronoi` ne revient plus (vu sur les couches à zones peintes : console bloquée sur un cœur). L'entrée tournée est maintenant vérifiée ; un angle qui la rend invalide est sauté et l'angle suivant essayé. Sur un plateau qui calait 6 fois sur 6 : 16 tranchages sur 18 finissent, résultats identiques. |
+| 10 | `MultiMaterialSegmentation.cpp` | **Zones peintes découpées proprement** (novembre 2026). Les traits peints projetés sur un bord de couche pouvaient se chevaucher ou pointer à rebours ; le bord découpé revenait alors sur lui-même, ce que le calcul de Voronoi ne supporte pas : diagramme dégénéré, îlots entiers d'une couche du dessus coloriés au hasard d'un tranchage à l'autre, et parfois tranchage sans fin. Les morceaux de chaque bord sont maintenant reconstruits dans l'ordre, du début à la fin du bord. Sur un plateau d'essai : entrées invalides 49 → 4, réparations ratées 47 → 2, même filament par couleur d'un tranchage à l'autre. `RELIEVO_MM_NO_MONOTONIC=1` l'éteint (comparaisons). |
 
 ## Compiler
 
@@ -74,6 +75,11 @@ which has neither reviewed nor endorsed them.
    their endpoints, which can make two segments cross; `boost::polygon::construct_voronoi` then never returns (seen on painted
    multi-material layers: console stuck on one core). The rotated input is now checked and an angle that makes it invalid is
    skipped. On a plate that stalled 6 times out of 6, 16 runs out of 18 finish, with identical results.
+10. **Painted regions split cleanly** (November 2026). Painted lines projected on a layer contour could overlap or point
+   backwards, and the split contour then went back on itself, which the Voronoi computation does not support: degenerate
+   diagram, whole blocks of a top layer coloured at random from one run to the next, sometimes slicing that never ends.
+   Each contour segment is now rebuilt in order, from its start to its end. Test plate: invalid inputs 49 -> 4, failed
+   repairs 47 -> 2, same filament per colour between runs. `RELIEVO_MM_NO_MONOTONIC=1` turns it off (comparisons).
 
 Portable binary (Releases): unzip and run `bambu-studio.exe` / `bambu-studio-console.exe`. `resources` is a full copy; the
 Visual C++ 2015-2022 x64 runtime is bundled (Microsoft redistributable DLLs); Windows 10 also needs the WebView2 runtime.

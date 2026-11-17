@@ -11,6 +11,8 @@
 
 #include <utility>
 #include <unordered_set>
+#include <algorithm>             // Relievo: std::clamp (relievo_make_monotonic)
+#include <cstdlib>               // Relievo: std::getenv
 
 #include <boost/log/trivial.hpp>
 #include <tbb/parallel_for.h>
@@ -727,6 +729,50 @@ static bool are_lines_connected(const ColoredLines &colored_lines)
 }
 #endif
 
+// Relievo: the painted lines projected on one contour segment can overlap or point backwards (rounded projections,
+// ties between colours at the same place whose order varies between runs). colorize_line then produced pieces going
+// back along the segment (fold-back) or of zero length: seen on most painted layers of a test plate. boost::polygon::
+// construct_voronoi requires segments that only meet at shared endpoints; with such input it usually copes, but
+// sometimes never returns (console stuck on one core in build_graph, 2 runs out of 18 after the rotation guard).
+// The pieces are rebuilt as a monotonic subdivision of the segment, from its start to its end: each piece ends
+// further along the segment than the previous one, and a piece that would not is dropped (the next colour covers its
+// stretch). RELIEVO_MM_NO_MONOTONIC=1 turns this off (A/B tests).
+static void relievo_make_monotonic(const Line &segment, ColoredLines &lines)
+{
+    static const bool off = [] { const char *v = std::getenv("RELIEVO_MM_NO_MONOTONIC"); return v && *v && std::atoi(v) != 0; }();
+    if (off || lines.empty())
+        return;
+    const Vec2d  a    = segment.a.cast<double>();
+    const Vec2d  dir  = (segment.b - segment.a).cast<double>();
+    const double len2 = dir.squaredNorm();
+    if (len2 <= 0.)
+        return;
+    auto param = [&a, &dir, len2](const Point &p) { return (p.cast<double>() - a).dot(dir) / len2; };
+    auto at    = [&segment, &a, &dir](double t) -> Point {
+        if (t <= 0.) return segment.a;
+        if (t >= 1.) return segment.b;
+        const Vec2d p = a + dir * t;
+        return Point(coord_t(std::llround(p.x())), coord_t(std::llround(p.y())));
+    };
+    ColoredLines out;
+    out.reserve(lines.size());
+    Point  prev_p = segment.a;
+    double prev_t = 0.;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const bool  last = i + 1 == lines.size();
+        const Point p    = last ? segment.b : at(std::clamp(param(lines[i].line.b), 0., 1.));
+        const double t   = last ? 1. : param(p); // of the rounded point: rounding must not step back either
+        if (p == prev_p || t <= prev_t)
+            continue;
+        ColoredLine piece = lines[i];
+        piece.line        = Line(prev_p, p);
+        out.push_back(piece);
+        prev_p = p;
+        prev_t = t;
+    }
+    lines = std::move(out);
+}
+
 static ColoredLines colorize_line(const Line &line_to_process,
                                               const size_t              start_idx,
                                               const size_t              end_idx,
@@ -766,6 +812,7 @@ static ColoredLines colorize_line(const Line &line_to_process,
 
     // Make sure all the lines are connected.
     assert(are_lines_connected(final_lines));
+    relievo_make_monotonic(line_to_process, final_lines);
 
     for (size_t line_idx = 2; line_idx < final_lines.size(); ++line_idx) {
         const ColoredLine &line_0 = final_lines[line_idx - 2];
