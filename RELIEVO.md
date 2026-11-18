@@ -1,8 +1,8 @@
 # Bambu Studio — version patchée Relievo
 
 **Base :** Bambu Studio `v02.07.01.62` (tag officiel de [bambulab/BambuStudio](https://github.com/bambulab/BambuStudio)).
-**Modifications :** Relievo (relievo.fr), de juillet à septembre 2026. Cette branche contient le tag d'origine plus **un seul
-commit**, qui regroupe toutes les modifications. `git diff v02.07.01.62` les montre en entier (10 fichiers, environ 100 lignes).
+**Modifications :** Relievo (relievo.fr), de juillet à novembre 2026. Cette branche contient le tag d'origine plus les commits
+Relievo, un par modification ; `git diff v02.07.01.62` les montre en entier (18 fichiers de `src`, environ 400 lignes).
 **Licence :** inchangée, **GNU AGPL v3** (voir `LICENSE`). Ce dépôt **est** la source correspondante du binaire publié dans les
 *Releases*.
 
@@ -27,8 +27,8 @@ n'ont **aucun lien** avec Bambu Lab, qui ne les a ni relues ni approuvées.
 ## Compiler
 
 Comme l'original (voir `doc/` et le README d'origine) : dépendances avec `build_win.bat -d <dossier_deps> -s deps`, puis
-l'application avec `build_win.bat -d <dossier_deps> -s app`. Le binaire publié a été compilé en `RelWithDebInfo` (MSVC 2022,
-Windows 11, 18/09/2026).
+l'application avec `build_win.bat -d <dossier_deps> -s app`. Depuis novembre 2026, les binaires publiés sont compilés par
+GitHub Actions (`.github/workflows/relievo_win.yml`, `RelWithDebInfo`, MSVC 2022) ; chaque Release donne son commit et son run.
 
 ## Binaire portable (Releases)
 
@@ -43,8 +43,8 @@ Zip à décompresser, puis lancer `bambu-studio.exe` (interface) ou `bambu-studi
 # Bambu Studio — Relievo patched build (English)
 
 **Base:** Bambu Studio `v02.07.01.62` (official tag of [bambulab/BambuStudio](https://github.com/bambulab/BambuStudio)).
-**Modified by:** Relievo (relievo.fr), July–September 2026. This branch is the original tag plus **one commit** holding every
-change; `git diff v02.07.01.62` shows all of them (10 files, ~100 lines).
+**Modified by:** Relievo (relievo.fr), July–November 2026. This branch is the original tag plus the Relievo commits, one per
+change; `git diff v02.07.01.62` shows all of them (18 files under `src`, ~400 lines).
 **License:** unchanged, **GNU AGPL v3** (see `LICENSE`). This repository **is** the corresponding source of the binary
 published under *Releases*.
 

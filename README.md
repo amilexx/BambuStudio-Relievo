@@ -11,7 +11,7 @@
 > [bambulab/BambuStudio](https://github.com/bambulab/BambuStudio).*
 
 **Télécharger / Download (Windows 64 bits, portable) :**
-[Releases → relievo-02.07.01.62](https://github.com/amilexx/BambuStudio-Relievo/releases/tag/relievo-02.07.01.62)
+[dernière version / latest release](https://github.com/amilexx/BambuStudio-Relievo/releases/latest) · [toutes les versions / all releases](https://github.com/amilexx/BambuStudio-Relievo/releases)
 
 **Ce qui change / What changes** (détail complet / full details: [RELIEVO.md](RELIEVO.md)) :
 
@@ -22,10 +22,13 @@
 | Îlots résiduels / residual islands | Petits restes entre volumes quasi coïncidents retirés. *Removed between near-coincident volumes.* |
 | Prime Saving | Proposé sur toute machine multi-extrudeur (X2D). *Offered on any multi-extruder machine.* |
 | `bambu-studio-console.exe` | Version ligne de commande pour trancher par script. *Console build for scripted slicing.* |
+| Cœur léger / light core | Remplissage allégé loin des surfaces, éteint par défaut. *Lighter infill away from surfaces, off by default.* |
+| Purge dans le remplissage / flush into infill | Sans tour de purge, éteint par défaut. *Without a prime tower, off by default.* |
+| Segmentation multicolore / multi-material segmentation | Ne cale plus et ne colorie plus d'îlots au hasard. *No longer stalls nor colours islands at random.* |
 
-Toutes les modifications tiennent dans **un seul commit** par-dessus le tag officiel.
-*All changes are in **one commit** on top of the official tag:*
-[`v02.07.01.62...relievo/v02.07.01.62`](https://github.com/amilexx/BambuStudio-Relievo/compare/v02.07.01.62...relievo/v02.07.01.62).
+Toutes les modifications, un commit chacune, par-dessus le tag officiel.
+*All changes, one commit each, on top of the official tag:*
+[`v02.07.01.62...relievo/purge-remplissage`](https://github.com/amilexx/BambuStudio-Relievo/compare/v02.07.01.62...relievo/purge-remplissage).
 
 ---
 
